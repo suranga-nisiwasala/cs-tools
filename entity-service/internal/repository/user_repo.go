@@ -195,6 +195,17 @@ func (r *userRepo) SearchUsers(ctx context.Context, req domain.SearchUsersReques
 		argIdx++
 	}
 
+	if req.Filters.Active != nil {
+		// is_active is nullable; a NULL counts as active (matches
+		// UserDetail.Active's own documented semantics), so "active" means
+		// "not explicitly false" and "inactive" means "explicitly false".
+		if *req.Filters.Active {
+			where += " AND (u.is_active IS NULL OR u.is_active = TRUE)"
+		} else {
+			where += " AND u.is_active = FALSE"
+		}
+	}
+
 	if len(req.Filters.RoleIDs) > 0 {
 		// RoleIDs holds role NAMEs (role.name, migration 000004), not UUIDs,
 		// despite the field's name -- see domain.UserRole's own doc comment
@@ -210,6 +221,31 @@ func (r *userRepo) SearchUsers(ctx context.Context, req domain.SearchUsersReques
 			WHERE ur.user_id = u.id AND r.name = ANY($%d::text[])
 		)`, argIdx)
 		filterArgs = append(filterArgs, roleNames)
+		argIdx++
+	}
+
+	if len(req.Filters.GroupIDs) > 0 {
+		// GroupIDs restricts to members of the given teams (migration
+		// 000028's team/team_member -- the same table SearchGroups reads,
+		// see group_repo.go's own doc comment on why "group" here means
+		// "team"). Matches if the user belongs to ANY of the given teams
+		// (OR semantics), same as RoleIDs above.
+		where += fmt.Sprintf(` AND EXISTS (
+			SELECT 1 FROM team_member tm
+			WHERE tm.user_id = u.id AND tm.team_id = ANY($%d::uuid[])
+		)`, argIdx)
+		filterArgs = append(filterArgs, req.Filters.GroupIDs)
+		argIdx++
+	}
+
+	if len(req.Filters.GroupNames) > 0 {
+		// GroupNames is the same membership check as GroupIDs, resolved by
+		// team.name instead of id.
+		where += fmt.Sprintf(` AND EXISTS (
+			SELECT 1 FROM team_member tm JOIN team t ON t.id = tm.team_id
+			WHERE tm.user_id = u.id AND t.name = ANY($%d::text[])
+		)`, argIdx)
+		filterArgs = append(filterArgs, req.Filters.GroupNames)
 		argIdx++
 	}
 

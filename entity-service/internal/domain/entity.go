@@ -101,12 +101,12 @@ type SearchUsersFilters struct {
 	// filters, and supplying it also lifts the active-only default so a deactivated
 	// user stays retrievable by ID.
 	UserIDs []string `json:"userIds"`
-	// GroupIDs restricts the search to members of these groups. Resolved to a user-ID
-	// set before the upstream call, since the data source cannot join users against
-	// group membership in one query.
+	// GroupIDs restricts the search to members of these groups. On the Postgres
+	// data source, "group" here means "team" (migration 000028's team/team_member
+	// -- the same table SearchGroups reads, see group_repo.go's own doc comment).
 	GroupIDs []string `json:"groupIds"`
 	// GroupNames restricts the search to members of the groups with these exact display
-	// names, resolved to a user-ID set the same way GroupIDs is. It exists alongside
+	// names, matched the same way GroupIDs is. It exists alongside
 	// GroupIDs because the caller's team registry is keyed by group name: group ids
 	// differ between environments while the names do not, and not every configured team
 	// carries an id at all.

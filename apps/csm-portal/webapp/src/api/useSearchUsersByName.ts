@@ -34,6 +34,7 @@ const USER_SEARCH_LIMIT = 20;
 export interface UserSearchByNameScope {
   roleIds?: string[];
   active?: boolean;
+  groupIds?: string[];
 }
 
 /** Shared fetch behind both hooks below — kept out of `useSearchUsersByName`'s
@@ -52,7 +53,13 @@ function useUsersByNameSearch(
   const q = query.trim();
 
   return useQuery<BeUser[], Error>({
-    queryKey: [ApiQueryKeys.USERS_SEARCH_BY_NAME, q, scope?.roleIds, scope?.active],
+    queryKey: [
+      ApiQueryKeys.USERS_SEARCH_BY_NAME,
+      q,
+      scope?.roleIds,
+      scope?.active,
+      scope?.groupIds,
+    ],
     queryFn: async (): Promise<BeUser[]> => {
       const res = await api.post<BeUserSearchPayload, BeUserSearchResponse>(
         "/users/search",
@@ -61,6 +68,7 @@ function useUsersByNameSearch(
             searchQuery: q,
             ...(scope?.roleIds && { roleIds: scope.roleIds }),
             ...(scope?.active !== undefined && { active: scope.active }),
+            ...(scope?.groupIds && scope.groupIds.length > 0 && { groupIds: scope.groupIds }),
           },
           pagination: { offset: 0, limit: USER_SEARCH_LIMIT },
         },
@@ -110,5 +118,29 @@ export function useSearchInternalUsersByName(
   return useUsersByNameSearch(query, enabled, {
     roleIds: INTERNAL_USER_ROLES,
     active: true,
+  });
+}
+
+/**
+ * Internal-staff-only twin of {@link useSearchInternalUsersByName}, additionally
+ * narrowed to members of `groupId` when one is given — for the change-request
+ * create form's "Assigned to" field, so picking an Assignment group restricts
+ * who can be assigned to that group's own members rather than the whole
+ * internal directory. `(query, enabled, groupId?)` matches
+ * `useSearchServiceOfferings`'s shape for the same reason: it lines up with
+ * `AsyncEntitySelect`'s generic `useSearch` prop and can be passed as a stable
+ * reference (`useSearch={useSearchInternalUsersByGroup}`) instead of an inline
+ * arrow function, which would call a hook from inside a closure and break the
+ * rules of hooks.
+ */
+export function useSearchInternalUsersByGroup(
+  query: string,
+  enabled: boolean,
+  groupId?: string,
+): UseQueryResult<BeUser[], Error> {
+  return useUsersByNameSearch(query, enabled, {
+    roleIds: INTERNAL_USER_ROLES,
+    active: true,
+    ...(groupId && { groupIds: [groupId] }),
   });
 }

@@ -213,12 +213,9 @@ func (s *userService) SearchUsers(ctx context.Context, req domain.SearchUsersReq
 	if err := validateSearchQuery(req.Filters.SearchQuery); err != nil {
 		return domain.SearchUsersResponse{}, err
 	}
-	if len(req.Filters.UserIDs) > 0 || len(req.Filters.GroupIDs) > 0 || len(req.Filters.GroupNames) > 0 {
+	if len(req.Filters.UserIDs) > 0 {
 		return domain.SearchUsersResponse{}, &apierror.ValidationError{
-			Msg: "userIds, groupIds and groupNames filters are only supported for the ServiceNow data source"}
-	}
-	if req.Filters.Active != nil {
-		return domain.SearchUsersResponse{}, &apierror.ValidationError{Msg: "active filter is only supported for the ServiceNow data source"}
+			Msg: "userIds filter is only supported for the ServiceNow data source"}
 	}
 	if req.SortBy.Field != "" && !validUserSortField[req.SortBy.Field] {
 		return domain.SearchUsersResponse{}, &apierror.ValidationError{Msg: "sortBy.field contains invalid value: " + string(req.SortBy.Field)}

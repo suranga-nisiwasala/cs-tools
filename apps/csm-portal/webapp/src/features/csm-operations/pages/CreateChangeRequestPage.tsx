@@ -45,7 +45,10 @@ import { usePostChangeRequest } from "@features/csm-operations/api/usePostChange
 import { usePatchChangeRequest } from "@features/csm-operations/api/usePatchChangeRequest";
 import { useGetUsersMe } from "@features/settings/api/useGetUsersMe";
 import { useSearchGroups } from "@api/useSearchGroups";
-import { useSearchInternalUsersByName } from "@api/useSearchUsersByName";
+import {
+  useSearchInternalUsersByGroup,
+  useSearchInternalUsersByName,
+} from "@api/useSearchUsersByName";
 import { useSearchParentRecordsForSelect } from "@features/csm-operations/api/useSearchParentRecordsForSelect";
 import AsyncEntitySelect from "@components/AsyncEntitySelect";
 import {
@@ -830,12 +833,16 @@ export default function CreateChangeRequestPage(): JSX.Element {
                 value={assignedEngineerId}
                 onChange={setAssignedEngineerId}
                 disabled={isSubmitting}
-                useSearch={useSearchInternalUsersByName}
+                useSearch={useSearchInternalUsersByGroup}
                 // useSearchUsersByName filters out any user without an id,
                 // so every option here is guaranteed to have one.
                 getId={(u) => u.id!}
                 getLabel={userLabel}
                 knownLabel={cloneState?.assignedEngineerLabel}
+                // Scopes "Assigned to" to the picked Assignment group's own
+                // members once one is selected — undefined (no group picked
+                // yet) falls back to the full internal directory.
+                searchExtra={groupId || undefined}
               />
             </Box>
             <Box sx={{ flex: "1 1 220px" }}>
