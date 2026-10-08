@@ -57,6 +57,7 @@ type cgMirror struct {
 	calls []domain.CreateIncidentRequest
 }
 
+// CreateIncident records the request the ServiceNow mirror received and answers with a fresh id and number.
 func (m *cgMirror) CreateIncident(_ context.Context, req domain.CreateIncidentRequest) (domain.CreateIncidentResponse, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -68,6 +69,8 @@ func (m *cgMirror) CreateIncident(_ context.Context, req domain.CreateIncidentRe
 	return resp, nil
 }
 
+// newCreateGroupEnv connects to INCIDENT_CREATE_GROUP_TEST_DSN (skipping without it) and seeds the caller, the
+// groups and the services these tests create incidents against, removing them again when the test ends.
 func newCreateGroupEnv(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := os.Getenv("INCIDENT_CREATE_GROUP_TEST_DSN")
@@ -143,6 +146,7 @@ func storedGroupAndNote(t *testing.T, pool *pgxpool.Pool) (group, note string) {
 	return group, note
 }
 
+// countTestIncidents counts the incidents these tests created, so a refused create can be shown to write nothing.
 func countTestIncidents(t *testing.T, pool *pgxpool.Pool) int {
 	t.Helper()
 	var n int

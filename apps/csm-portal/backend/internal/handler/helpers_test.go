@@ -820,6 +820,7 @@ func (m *mockEntityIncidentClient) ListSpecialistHandoffTeams(ctx context.Contex
 	return []byte(`{"teams":[]}`), nil
 }
 
+// GetIncidentCreateDefaults returns the mock's canned create-defaults body or error.
 func (m *mockEntityIncidentClient) GetIncidentCreateDefaults(ctx context.Context) ([]byte, error) {
 	if m.getIncidentCreateDefaultsFn != nil {
 		return m.getIncidentCreateDefaultsFn(ctx)

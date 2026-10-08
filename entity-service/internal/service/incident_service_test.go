@@ -98,6 +98,7 @@ type stubIncidentRepo struct {
 	lookupErr error
 }
 
+// SupportGroupOfService answers from the stub's per-service support groups.
 func (s *stubIncidentRepo) SupportGroupOfService(_ context.Context, serviceID string) (repository.ServiceSupportGroup, error) {
 	if s.lookupErr != nil {
 		return repository.ServiceSupportGroup{}, s.lookupErr
@@ -110,6 +111,7 @@ func (s *stubIncidentRepo) SupportGroupOfService(_ context.Context, serviceID st
 	return repository.ServiceSupportGroup{Found: true, ServiceName: name, GroupID: group, GroupName: s.groupNames[group]}, nil
 }
 
+// IsSupportGroup answers from the stub's support-group set.
 func (s *stubIncidentRepo) IsSupportGroup(_ context.Context, groupID string) (bool, error) {
 	if s.lookupErr != nil {
 		return false, s.lookupErr

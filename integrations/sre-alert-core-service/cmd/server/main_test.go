@@ -24,6 +24,7 @@ import (
 	"time"
 )
 
+// bufferLogger returns a text logger that writes to the returned buffer, for asserting on log output.
 func bufferLogger() (*slog.Logger, *bytes.Buffer) {
 	var buf bytes.Buffer
 	return slog.New(slog.NewTextHandler(&buf, nil)), &buf

@@ -87,6 +87,8 @@ func filler(n int) []snServiceFixture {
 	return out
 }
 
+// snService builds a ServiceNow incident service over a fake ServiceNow that serves services, with defaultService as
+// its Default service; the fake records the create body in body and counts service lookups in lookups.
 func snService(t *testing.T, services []snServiceFixture, defaultService string, body *map[string]any, lookups *int32) IncidentService {
 	t.Helper()
 	return WithIncidentDefaultService(NewServiceNowIncidentService(newTestSNClient(t, snCreateCapturingClient(t, services, body, lookups)), nil), defaultService)

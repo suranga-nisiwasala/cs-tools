@@ -38,11 +38,13 @@ type createGroupStubService struct {
 	defaultsErr error
 }
 
+// CreateIncident records the request and returns the stub's configured response or error.
 func (s *createGroupStubService) CreateIncident(_ context.Context, req domain.CreateIncidentRequest) (domain.CreateIncidentResponse, error) {
 	s.got = &req
 	return domain.CreateIncidentResponse{}, s.createErr
 }
 
+// GetIncidentCreateDefaults returns the stub's configured defaults or error.
 func (s *createGroupStubService) GetIncidentCreateDefaults(context.Context) (domain.IncidentCreateDefaults, error) {
 	return s.defaults, s.defaultsErr
 }

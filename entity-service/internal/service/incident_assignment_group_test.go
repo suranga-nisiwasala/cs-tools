@@ -72,6 +72,7 @@ func userCtx() context.Context {
 	return auth.WithIdentity(context.Background(), auth.Identity{Validated: true, UserEmail: "jane.doe@example.com"})
 }
 
+// groupOf is the request's assignment group, or "" when it has none.
 func groupOf(r domain.CreateIncidentRequest) string {
 	if r.AssignmentGroupID == nil {
 		return "<none>"
@@ -79,6 +80,7 @@ func groupOf(r domain.CreateIncidentRequest) string {
 	return *r.AssignmentGroupID
 }
 
+// workNotesOf is the request's work notes, or "" when it has none.
 func workNotesOf(r domain.CreateIncidentRequest) string {
 	if r.WorkNotes == nil {
 		return ""

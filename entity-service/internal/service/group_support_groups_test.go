@@ -26,11 +26,13 @@ import (
 // stubGroupRepo records which search ran.
 type stubGroupRepo struct{ called string }
 
+// SearchGroups records that the unfiltered group search was called.
 func (s *stubGroupRepo) SearchGroups(context.Context, string, int, int) ([]domain.Group, int, error) {
 	s.called = "teams"
 	return []domain.Group{}, 0, nil
 }
 
+// SearchSupportGroups records that the support-group search was called.
 func (s *stubGroupRepo) SearchSupportGroups(context.Context, string, int, int) ([]domain.Group, int, error) {
 	s.called = "support groups"
 	return []domain.Group{}, 0, nil

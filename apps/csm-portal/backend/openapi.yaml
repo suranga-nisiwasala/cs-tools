@@ -7286,7 +7286,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/CreateIncidentResponse'
         "400":
-          description: BadRequest
+          description: >-
+            BadRequest. An assignmentGroupId that is not the active support group of any
+            service is refused with entity-service's message and `errorCode:
+            incident_assignment_group_not_allowed`; every other 400 carries the generic
+            message and no code.
           content:
             application/json:
               schema:
@@ -13605,8 +13609,9 @@ components:
         The body of an error response. `message` is the reason, worded for people: it
         can change, so a client must never branch on it. `errorCode` is the stable
         machine-readable name entity-service gave a refusal, passed through unchanged
-        on the 400, 403, 409 and 422 of PATCH /change-requests/{id} and on the 403 and
-        409 of POST /change-requests/{id}/approvals/decision; it is omitted when the
+        on the 400, 403, 409 and 422 of PATCH /change-requests/{id}, on the 403 and
+        409 of POST /change-requests/{id}/approvals/decision, and on the 400 of POST
+        /incidents for a refused assignment group; it is omitted when the
         refusal has none, which is the body this API has always returned, so a client
         treats its absence, and a value it does not know, as "no more specific than the
         status". The status and the message are the same with or without it.
@@ -13626,7 +13631,10 @@ components:
             is recorded as having proposed), `change_request_not_asked`
             (403: not asked on the customer group's stage) and `change_request_forbidden`
             (403: the change request's creator, or a user who may not decide an internal
-            stage). The list grows, so this is deliberately not a closed enum.
+            stage); and, on POST /incidents, `incident_assignment_group_not_allowed` (400:
+            the assignmentGroupId sent is not the active support group of any service).
+            Every other create-incident failure keeps the generic message and carries no
+            code. The list grows, so this is deliberately not a closed enum.
           example: change_request_approval_not_pending
 
     HealthDependenciesResponse:

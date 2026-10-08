@@ -64,6 +64,7 @@ func TestResolveService_EmptyLabelUsesTheDefaultService(t *testing.T) {
 	}
 }
 
+// createBody is the JSON body the CSM client would send for req, decoded into a map.
 func createBody(t *testing.T, req csm.CreateIncidentRequest) map[string]any {
 	t.Helper()
 	body, err := json.Marshal(req)
