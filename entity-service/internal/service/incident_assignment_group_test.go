@@ -139,22 +139,69 @@ func TestCreateIncident_ServiceWithoutGroupGoesToTheDefaultTeam(t *testing.T) {
 	}
 }
 
-// A service id no service has is treated like a service with no group; the
-// note then names it by id.
-func TestCreateIncident_UnknownServiceGoesToTheDefaultTeam(t *testing.T) {
-	_ = captureSlog(t)
-	var got domain.CreateIncidentRequest
-	req := validCreateIncidentRequest()
-	repo := createCapturing(map[string]string{testDefaultService: testDefaultGroup}, &got)
+// Rule 0: a well-formed serviceId that no service has is a 400 with its own
+// errorCode, raised before anything is written -- whether or not a group is
+// sent, and ahead of a group that would be refused too. It no longer falls
+// back to the default team (the insert's foreign key refused it anyway).
+func TestCreateIncident_UnknownServiceIsRefusedBeforeAnyWrite(t *testing.T) {
+	for name, tc := range map[string]struct {
+		sent    *string
+		allowed map[string]bool
+	}{
+		"no group sent":         {},
+		"an allowed group sent": {sent: strPtrGroup(testDefaultGroup)},
+		"a refused group sent":  {sent: strPtrGroup(testOtherGroup), allowed: map[string]bool{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			req := validCreateIncidentRequest()
+			req.AssignmentGroupID = tc.sent
+			// The default service exists and has a group: the old fallback is there to take.
+			repo := refusingCreate(t, &stubIncidentRepo{supportGroups: map[string]string{testDefaultService: testDefaultGroup}, allowedGroups: tc.allowed})
 
-	if _, err := pgService(repo, testDefaultService).CreateIncident(userCtx(), req); err != nil {
-		t.Fatalf("CreateIncident: %v", err)
+			_, err := pgService(repo, testDefaultService).CreateIncident(userCtx(), req)
+			var ve *apierror.ValidationError
+			if !errors.As(err, &ve) {
+				t.Fatalf("err = %v, want a ValidationError (400)", err)
+			}
+			if ve.Msg != errServiceNotFound || ve.Code != apierror.CodeIncidentServiceNotFound {
+				t.Errorf("got (%q, %q), want (%q, %q)", ve.Msg, ve.Code, errServiceNotFound, apierror.CodeIncidentServiceNotFound)
+			}
+			if tc.sent != nil && repo.sentGroupChecks != 1 {
+				t.Errorf("service+group checks = %d, want 1 (one query answers both)", repo.sentGroupChecks)
+			}
+		})
 	}
-	if groupOf(got) != testDefaultGroup {
-		t.Errorf("assignmentGroupId = %s, want %s", groupOf(got), testDefaultGroup)
-	}
-	if want := "Service " + req.ServiceID + " has no support group; assigned to the default team (" + testDefaultGroup + ")"; workNotesOf(got) != want {
-		t.Errorf("work notes = %q, want %q", workNotesOf(got), want)
+}
+
+// A missing serviceId is still "serviceId is required", and one that is not a
+// UUID still an invalid-UUID 400 -- neither carries the not-found code.
+func TestCreateIncident_MissingOrMalformedServiceIsTheUsual400(t *testing.T) {
+	for name, tc := range map[string]struct {
+		serviceID string
+		sent      *string
+		wantMsg   string
+	}{
+		"missing, no group sent":    {serviceID: "", wantMsg: "serviceId is required"},
+		"missing, group sent":       {serviceID: "", sent: strPtrGroup(testSupportGroup), wantMsg: "serviceId is required"},
+		"blank, no group sent":      {serviceID: "   ", wantMsg: "serviceId"},
+		"not a UUID, no group sent": {serviceID: "nope", wantMsg: "serviceId"},
+		"not a UUID, group sent":    {serviceID: "nope", sent: strPtrGroup(testSupportGroup), wantMsg: "serviceId"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			req := validCreateIncidentRequest()
+			req.ServiceID = tc.serviceID
+			req.AssignmentGroupID = tc.sent
+			repo := refusingCreate(t, &stubIncidentRepo{supportGroups: map[string]string{testCaseUUID: testSupportGroup}})
+
+			_, err := pgService(repo, "").CreateIncident(userCtx(), req)
+			var ve *apierror.ValidationError
+			if !errors.As(err, &ve) {
+				t.Fatalf("err = %v, want a ValidationError (400)", err)
+			}
+			if !strings.Contains(ve.Msg, tc.wantMsg) || ve.Code != "" {
+				t.Errorf("got (%q, %q), want a message containing %q and no code", ve.Msg, ve.Code, tc.wantMsg)
+			}
+		})
 	}
 }
 
@@ -400,6 +447,30 @@ func TestCreateIncident_DualWriteRefusesBeforeServiceNow(t *testing.T) {
 			var toSN domain.CreateIncidentRequest
 			if _, err := dualWrite(t, repo, testDefaultService, &toSN, true).CreateIncident(userCtx(), req); err == nil {
 				t.Fatal("CreateIncident succeeded, want a refusal")
+			}
+		})
+	}
+}
+
+// In dual-write mode an unknown service -- with no group sent, or with one
+// (allowed or not) -- is refused on Postgres before ServiceNow is called, so
+// no orphan incident is left there, and the refusal is the coded 400, not the
+// insert's foreign-key error.
+func TestCreateIncident_DualWriteRefusesAnUnknownServiceBeforeServiceNow(t *testing.T) {
+	for name, sent := range map[string]*string{
+		"no group sent":      nil,
+		"allowed group sent": strPtrGroup(testDefaultGroup),
+		"group outside sent": strPtrGroup(testOtherGroup),
+	} {
+		t.Run(name, func(t *testing.T) {
+			req := validCreateIncidentRequest()
+			req.AssignmentGroupID = sent
+			var toSN domain.CreateIncidentRequest
+			repo := &stubIncidentRepo{supportGroups: map[string]string{testDefaultService: testDefaultGroup}}
+			_, err := dualWrite(t, repo, testDefaultService, &toSN, true).CreateIncident(userCtx(), req)
+			var ve *apierror.ValidationError
+			if !errors.As(err, &ve) || ve.Code != apierror.CodeIncidentServiceNotFound {
+				t.Fatalf("err = %v, want the %s 400", err, apierror.CodeIncidentServiceNotFound)
 			}
 		})
 	}

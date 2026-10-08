@@ -83,6 +83,20 @@ func TestCreateIncident_ARefusedGroupIs400WithItsErrorCode(t *testing.T) {
 	}
 }
 
+// The service's refusal of a well-formed serviceId that no service has is a
+// 400 whose body carries the message and the machine-readable errorCode.
+func TestCreateIncident_AnUnknownServiceIs400WithItsErrorCode(t *testing.T) {
+	svc := &createGroupStubService{createErr: &apierror.ValidationError{
+		Msg: "serviceId does not exist", Code: apierror.CodeIncidentServiceNotFound}}
+	rec := httptest.NewRecorder()
+	NewIncidentHandler(svc).CreateIncident(rec, httptest.NewRequest(http.MethodPost, "/incidents", strings.NewReader(createGroupBody+`}`)))
+
+	want := `{"code":400,"message":"serviceId does not exist","errorCode":"incident_service_not_found"}`
+	if rec.Code != http.StatusBadRequest || strings.TrimSpace(rec.Body.String()) != want {
+		t.Errorf("status = %d, body = %s; want 400 %s", rec.Code, rec.Body.String(), want)
+	}
+}
+
 // Every other 400 is unchanged: no errorCode key at all.
 func TestCreateIncident_AnUnrelated400HasNoErrorCode(t *testing.T) {
 	svc := &createGroupStubService{createErr: &apierror.ValidationError{Msg: "assignmentGroupId contains invalid UUID: \"x\""}}

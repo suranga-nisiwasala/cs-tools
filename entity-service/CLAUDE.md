@@ -6521,13 +6521,13 @@ every caller and every `DATA_SOURCE`:
    `incident_assignment_group_not_allowed`, which the CSM portal BFF passes through
    (non-UUID: 400 without a code; blank: not sent).
 2. Not sent: the service's support group (`service.support_group_id`).
-3. The service has none (or does not exist): the support group of `INCIDENT_DEFAULT_SERVICE_ID`, slog WARN.
+3. The service has none: the support group of `INCIDENT_DEFAULT_SERVICE_ID`, slog WARN.
 4. No default group (unset, missing, groupless): unassigned, slog ERROR. Not a request failure.
 5. A lookup failure returns its error; nothing is created.
 
 The **support-group set** is `supportGroupSetSQL` (`support_group_repo.go`): active `"group"` rows
 (`is_active` NULL counts as active) that are the support group of at least one service. The create
-check (`IncidentRepository.IsSupportGroup`) and `POST /groups/search` with
+check (`IncidentRepository.CheckServiceAndSupportGroup`) and `POST /groups/search` with
 `filters.supportGroupsOnly` (`GroupRepository.SearchSupportGroups`, which reads `"group"`, not the
 `team` registry) share it. A work note records the choice ("Assignment group set from service X's
 support group" / "Assignment group chosen by <actor>" / "Service X has no support group; assigned
@@ -6538,6 +6538,19 @@ gap), so the note lands in ServiceNow only. `DATA_SOURCE=servicenow` uses the sa
 ServiceNow's services (`scanSNServices`: only a complete scan may conclude "not there"); the service
 list carries no group's active flag, so that set cannot leave out an inactive group.
 `GET /incidents/create-defaults` (internal only) reports the default service and its group.
+
+**An unknown service is refused, not defaulted.** A well-formed `serviceId` that no service has is
+400 `serviceId does not exist` with `errorCode` `incident_service_not_found`, raised in
+`resolveAssignmentGroup` before any write. It used to fall back to the default team and then fail
+on the `incident.service_id` foreign key — after the ServiceNow create in dual-write mode (an orphan
+incident there) and with the FK's `pgErr.Detail` in the message. No group sent: the existing
+service lookup's `Found=false` decides it (no extra query). Group sent: one query,
+`IncidentRepository.CheckServiceAndSupportGroup` (two `EXISTS` in one `SELECT`, the group half
+being `supportGroupSetSQL`), answers both; when both are wrong the service is refused first. On
+`DATA_SOURCE=servicenow` the no-group path refuses only after a complete `scanSNServices` (an
+incomplete scan stays a 5xx); with a group sent the service is **not** checked there (it would be a
+second full scan per create), so that case still reaches ServiceNow's own create. A missing
+`serviceId` is still `serviceId is required`, and the FK mapping stays as a backstop.
 
 ## IT services (CMDB services)
 
@@ -8618,6 +8631,7 @@ All shared types live in `internal/domain/entity.go`. Conventions:
 | A registered contact holding no `REQUESTED` row on the customer stage that is LIVE (registered after the request went out, or a row of theirs cancelled directly): proposing, or answering on it. A request that was withdrawn (a sibling's answer settled the stage) leaves no live stage and is a 409 instead: `change_request_approval_not_pending` for an answer, `change_request_not_proposable` for a proposal | `change_request_not_asked` | 403 |
 | Not a registered PORTAL_USER contact of the change request's project, the change request's own creator, a user who may not decide an internal stage, a field a customer may not set, a caller with no user record | `change_request_forbidden` | 403 |
 | `POST /incidents` with an `assignmentGroupId` that is not an active support group of any service (a non-UUID value is a plain 400 with no code); nothing created | `incident_assignment_group_not_allowed` | 400 |
+| `POST /incidents` with a well-formed `serviceId` that no service has (a missing or non-UUID one is a plain 400 with no code); refused before any write, so in dual-write mode ServiceNow is never called | `incident_service_not_found` | 400 |
 
 `TestWriteServiceError_CarriesTheMachineReadableCode` (handler) and `TestChangeRequestErrorCodesIntegration_*` (repository, against a real database) pin each code to its refusal. customer-portal `backend-v2` and the CSM portal BFF pass the code through with the status they give it; the customer webapp classifies a refusal by it (`describeChangeRequestActionError`), and a 409 with a code it does not know, or none (an older entity-service), is "something went wrong, refresh", never "already answered".
 

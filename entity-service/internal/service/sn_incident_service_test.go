@@ -56,7 +56,7 @@ func TestSNIncidentService_CreateIncident_WatchListResolvedToEmails(t *testing.T
 	var gotBody map[string]any
 	mux := http.NewServeMux()
 	mux.HandleFunc("/users/search", watchListUserSearchStub(t))
-	mux.HandleFunc("/services/search", snServicesStub(nil))
+	mux.HandleFunc("/services/search", snServicesStub(requestService()))
 	mux.HandleFunc("/incidents", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("expected POST, got %s", r.Method)

@@ -34,10 +34,13 @@ type assignmentGroupLookups struct {
 	// supportGroupOf returns the service's name and support group; Found is
 	// false when no service has the id.
 	supportGroupOf func(ctx context.Context, serviceID string) (repository.ServiceSupportGroup, error)
-	// isSupportGroup reports whether groupID is in the set an explicit
-	// assignmentGroupId must belong to: active groups that are the support
-	// group of at least one service.
-	isSupportGroup func(ctx context.Context, groupID string) (bool, error)
+	// checkSentGroup answers the checks of a create that names its own group:
+	// whether a service has serviceID, and whether groupID is in the set an
+	// explicit assignmentGroupId must belong to (active groups that are the
+	// support group of at least one service). serviceID is "" when the request
+	// carries no well-formed one; serviceExists is then not read. A data source
+	// that does not check the service reports serviceExists true.
+	checkSentGroup func(ctx context.Context, serviceID, groupID string) (serviceExists, groupAllowed bool, err error)
 }
 
 // assignmentGroupDecision is what resolveAssignmentGroup chose: the group (nil
@@ -51,35 +54,57 @@ type assignmentGroupDecision struct {
 // outside the support-group set.
 const errAssignmentGroupNotAllowed = "assignmentGroupId must be the active support group of a service"
 
+// errServiceNotFound is the 400 for a well-formed serviceId that no service
+// has.
+const errServiceNotFound = "serviceId does not exist"
+
+// serviceNotFound is the refusal of a well-formed serviceId that no service has.
+func serviceNotFound() error {
+	return &apierror.ValidationError{Msg: errServiceNotFound, Code: apierror.CodeIncidentServiceNotFound}
+}
+
 // resolveAssignmentGroup decides an incident's assignment group on create.
 //
 // *** THE ONLY PLACE THE GROUP IS CHOSEN. *** Every caller -- the portal, the
 // microapp, alert-born incidents from sre-alert-core-service, any M2M client --
 // and every DATA_SOURCE goes through it, once, before any write:
 //
+//  0. a well-formed serviceId that no service has: a 400
+//     (CodeIncidentServiceNotFound), before anything is written. With a group
+//     sent, it is refused ahead of the group.
 //  1. assignmentGroupId sent: used if it is in the support-group set, else a
 //     400 (a value that is not a UUID is a 400 too). A blank value is not sent.
 //  2. not sent, the service has a support group: that group.
-//  3. not sent, the service has none (or does not exist): the support group of
-//     the default service, with a warning naming the service.
+//  3. not sent, the service has none: the support group of the default
+//     service, with a warning naming the service.
 //  4. no default service, or it does not exist or has no support group:
 //     unassigned, logged as an error (a misconfiguration, not a bad request).
 //  5. a lookup that fails returns its error: the incident is not created,
 //     rather than created unassigned.
 //
 // In dual-write mode it runs on Postgres before the ServiceNow create, so both
-// stores get the same group and a refused group never reaches ServiceNow.
+// stores get the same group, and a refused group or an unknown service never
+// reaches ServiceNow (no orphan incident there).
 //
-// An invalid serviceId is left for request validation to reject.
+// A missing or malformed serviceId is left for request validation to reject
+// ("serviceId is required" / invalid UUID), exactly as before.
 func resolveAssignmentGroup(ctx context.Context, req domain.CreateIncidentRequest, defaultServiceID string, l assignmentGroupLookups) (assignmentGroupDecision, error) {
+	serviceID := strings.TrimSpace(req.ServiceID)
+	if serviceID != "" && validateUUIDs("serviceId", []string{serviceID}) != nil {
+		serviceID = ""
+	}
+
 	if req.AssignmentGroupID != nil {
 		if sent := strings.TrimSpace(*req.AssignmentGroupID); sent != "" {
 			if err := validateUUIDs("assignmentGroupId", []string{sent}); err != nil {
 				return assignmentGroupDecision{}, err
 			}
-			ok, err := l.isSupportGroup(ctx, sent)
+			serviceExists, ok, err := l.checkSentGroup(ctx, serviceID, sent)
 			if err != nil {
 				return assignmentGroupDecision{}, err
+			}
+			if serviceID != "" && !serviceExists {
+				return assignmentGroupDecision{}, serviceNotFound()
 			}
 			if !ok {
 				return assignmentGroupDecision{}, &apierror.ValidationError{Msg: errAssignmentGroupNotAllowed, Code: apierror.CodeIncidentAssignmentGroupNotAllowed}
@@ -88,13 +113,15 @@ func resolveAssignmentGroup(ctx context.Context, req domain.CreateIncidentReques
 		}
 	}
 
-	serviceID := strings.TrimSpace(req.ServiceID)
-	if serviceID == "" || validateUUIDs("serviceId", []string{serviceID}) != nil {
+	if serviceID == "" {
 		return assignmentGroupDecision{}, nil
 	}
 	svc, err := l.supportGroupOf(ctx, serviceID)
 	if err != nil {
 		return assignmentGroupDecision{}, err
+	}
+	if !svc.Found {
+		return assignmentGroupDecision{}, serviceNotFound()
 	}
 	serviceLabel := nameOrID(svc.ServiceName, serviceID)
 	if svc.GroupID != "" {

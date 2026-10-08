@@ -91,11 +91,20 @@ type stubIncidentRepo struct {
 	supportGroups                map[string]string // service id -> support group id ("" = none); a key is a service that exists
 	serviceNames                 map[string]string // service id -> name; a key is a service that exists
 	groupNames                   map[string]string // group id -> name
-	// allowedGroups is the support-group set IsSupportGroup answers from;
-	// nil means every group in supportGroups (all active).
+	// allowedGroups is the support-group set CheckServiceAndSupportGroup
+	// answers from; nil means every group in supportGroups (all active).
 	allowedGroups map[string]bool
 	// lookupErr fails both support-group lookups.
 	lookupErr error
+	// sentGroupChecks counts CheckServiceAndSupportGroup calls.
+	sentGroupChecks int
+}
+
+// requestServiceExists is a stubIncidentRepo.supportGroups in which
+// validCreateIncidentRequest's service exists and has no support group: the
+// create goes on (an unknown service is refused before any write).
+func requestServiceExists() map[string]string {
+	return map[string]string{testCaseUUID: ""}
 }
 
 // SupportGroupOfService answers from the stub's per-service support groups.
@@ -111,20 +120,25 @@ func (s *stubIncidentRepo) SupportGroupOfService(_ context.Context, serviceID st
 	return repository.ServiceSupportGroup{Found: true, ServiceName: name, GroupID: group, GroupName: s.groupNames[group]}, nil
 }
 
-// IsSupportGroup answers from the stub's support-group set.
-func (s *stubIncidentRepo) IsSupportGroup(_ context.Context, groupID string) (bool, error) {
+// CheckServiceAndSupportGroup answers from the stub's services (a key of
+// supportGroups or serviceNames is a service that exists) and support-group set.
+func (s *stubIncidentRepo) CheckServiceAndSupportGroup(_ context.Context, serviceID, groupID string) (bool, bool, error) {
+	s.sentGroupChecks++
 	if s.lookupErr != nil {
-		return false, s.lookupErr
+		return false, false, s.lookupErr
 	}
+	_, hasGroup := s.supportGroups[serviceID]
+	_, named := s.serviceNames[serviceID]
+	serviceExists := serviceID != "" && (hasGroup || named)
 	if s.allowedGroups != nil {
-		return s.allowedGroups[groupID], nil
+		return serviceExists, s.allowedGroups[groupID], nil
 	}
 	for _, g := range s.supportGroups {
 		if g != "" && g == groupID {
-			return true, nil
+			return serviceExists, true, nil
 		}
 	}
-	return false, nil
+	return serviceExists, false, nil
 }
 
 func (s *stubIncidentRepo) SearchIncidents(context.Context, domain.SearchIncidentsRequest, []string, []string, []string, []string, *bool, *bool, *time.Time, *time.Time) ([]domain.SearchIncidentView, int, error) {
@@ -235,7 +249,7 @@ func TestIncidentService_CreateIncident_SNFailureLeavesPostgresUntouched(t *test
 	// No createIncidentFromServiceNow override -- stubIncidentRepo panics if
 	// it's ever called, which is exactly the assertion: Postgres must stay
 	// untouched.
-	repo := &stubIncidentRepo{}
+	repo := &stubIncidentRepo{supportGroups: requestServiceExists()}
 	svc := NewIncidentServiceWithSNMirror(repo, nil, mirror, nil, nil)
 
 	_, err := svc.CreateIncident(context.Background(), validCreateIncidentRequest())
@@ -277,6 +291,7 @@ func TestIncidentService_CreateIncident_SNSuccessCreatesPostgresRowWithMatchingI
 	var mu sync.Mutex
 	var gotID, gotNumber, gotCreatedBy string
 	repo := &stubIncidentRepo{
+		supportGroups: requestServiceExists(),
 		createIncidentFromServiceNow: func(_ context.Context, req domain.CreateIncidentRequest, id, number, createdBy string) (domain.CreateIncidentResponse, error) {
 			mu.Lock()
 			gotID, gotNumber, gotCreatedBy = id, number, createdBy
@@ -323,7 +338,7 @@ func TestIncidentService_CreateIncident_DoesNotRetryValidationError(t *testing.T
 			return domain.CreateIncidentResponse{}, &apierror.ValidationError{Msg: "category contains invalid value"}
 		},
 	}
-	repo := &stubIncidentRepo{}
+	repo := &stubIncidentRepo{supportGroups: requestServiceExists()}
 	svc := NewIncidentServiceWithSNMirror(repo, nil, mirror, nil, nil)
 
 	_, err := svc.CreateIncident(context.Background(), validCreateIncidentRequest())
@@ -351,7 +366,7 @@ func TestIncidentService_CreateIncident_RejectsConfigurationItemID(t *testing.T)
 			return domain.CreateIncidentResponse{}, nil
 		},
 	}
-	repo := &stubIncidentRepo{}
+	repo := &stubIncidentRepo{supportGroups: requestServiceExists()}
 	svc := NewIncidentServiceWithSNMirror(repo, nil, mirror, nil, nil)
 
 	configItemID := "77777777-7777-7777-7777-777777777777"
@@ -421,6 +436,7 @@ func TestIncidentService_CreateIncident_PublishesOnlyAfterPostgresSucceeds(t *te
 		},
 	}
 	repo := &stubIncidentRepo{
+		supportGroups: requestServiceExists(),
 		createIncidentFromServiceNow: func(_ context.Context, _ domain.CreateIncidentRequest, id, number, createdBy string) (domain.CreateIncidentResponse, error) {
 			resp := domain.CreateIncidentResponse{Message: "Incident created successfully."}
 			resp.Incident.ID = id
@@ -468,6 +484,7 @@ func TestIncidentService_CreateIncident_DoesNotPublishWhenPostgresFails(t *testi
 		},
 	}
 	repo := &stubIncidentRepo{
+		supportGroups: requestServiceExists(),
 		createIncidentFromServiceNow: func(context.Context, domain.CreateIncidentRequest, string, string, string) (domain.CreateIncidentResponse, error) {
 			return domain.CreateIncidentResponse{}, errors.New("postgres insert failed")
 		},

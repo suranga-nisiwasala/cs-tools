@@ -81,10 +81,11 @@ func (f *fakeSNIncidentStore) handler() http.Handler {
 		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "test-token", "expires_in": 3600})
 	})
 	// The support-group lookup DATA_SOURCE=servicenow makes before every
-	// create. No services: these incidents are created unassigned.
+	// create. Only the incident's service, with no support group: these
+	// incidents are created unassigned (an unlisted service would be refused).
 	mux.HandleFunc("POST /services/search", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"services":[],"totalRecords":0}`))
+		_, _ = fmt.Fprintf(w, `{"services":[{"id":%q,"name":"svc"}],"totalRecords":1}`, strings.ReplaceAll(lifecycleServiceID, "-", ""))
 	})
 	mux.HandleFunc("POST /incidents", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()

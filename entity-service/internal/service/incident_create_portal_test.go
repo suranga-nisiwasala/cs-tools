@@ -63,6 +63,7 @@ func TestIncidentService_CreateIncidentPortal_PassesDerivedFieldsAndPublishes(t 
 	var gotSubcategory *string
 	var gotReq domain.CreateIncidentRequest
 	repo := &stubIncidentRepo{
+		supportGroups: requestServiceExists(),
 		createIncident: func(_ context.Context, req domain.CreateIncidentRequest, priority string, subcategoryValue *string, createdBy string) (domain.CreateIncidentResponse, error) {
 			gotReq, gotPriority, gotSubcategory, gotCreatedBy = req, priority, subcategoryValue, createdBy
 			resp := domain.CreateIncidentResponse{Message: "Incident created successfully."}
@@ -128,6 +129,7 @@ func TestIncidentService_CreateIncidentPortal_WithoutSubcategory(t *testing.T) {
 	called := false
 	var gotSubcategory *string
 	repo := &stubIncidentRepo{
+		supportGroups: requestServiceExists(),
 		createIncident: func(_ context.Context, req domain.CreateIncidentRequest, _ string, subcategoryValue *string, _ string) (domain.CreateIncidentResponse, error) {
 			called = true
 			gotSubcategory = subcategoryValue
@@ -163,6 +165,7 @@ func TestIncidentService_CreateIncidentPortal_WithoutSubcategory(t *testing.T) {
 func TestIncidentService_CreateIncidentPortal_MachineCallerUsesClientID(t *testing.T) {
 	var gotCreatedBy string
 	repo := &stubIncidentRepo{
+		supportGroups: requestServiceExists(),
 		createIncident: func(_ context.Context, _ domain.CreateIncidentRequest, _ string, _ *string, createdBy string) (domain.CreateIncidentResponse, error) {
 			gotCreatedBy = createdBy
 			return domain.CreateIncidentResponse{}, nil
@@ -182,7 +185,7 @@ func TestIncidentService_CreateIncidentPortal_MachineCallerUsesClientID(t *testi
 // TestIncidentService_CreateIncidentPortal_ValidatesBeforeInsert: the same
 // input the ServiceNow path rejects is rejected here, before Postgres.
 func TestIncidentService_CreateIncidentPortal_ValidatesBeforeInsert(t *testing.T) {
-	svc := NewIncidentService(&stubIncidentRepo{}, nil) // CreateIncident panics if reached
+	svc := NewIncidentService(&stubIncidentRepo{supportGroups: requestServiceExists()}, nil) // CreateIncident panics if reached
 
 	cases := map[string]func(*domain.CreateIncidentRequest){
 		"missing subject":  func(r *domain.CreateIncidentRequest) { r.Subject = "" },
@@ -207,6 +210,7 @@ func TestIncidentService_CreateIncidentPortal_ValidatesBeforeInsert(t *testing.T
 // insert must not announce an incident that does not exist.
 func TestIncidentService_CreateIncidentPortal_NoPublishOnFailure(t *testing.T) {
 	repo := &stubIncidentRepo{
+		supportGroups: requestServiceExists(),
 		createIncident: func(context.Context, domain.CreateIncidentRequest, string, *string, string) (domain.CreateIncidentResponse, error) {
 			return domain.CreateIncidentResponse{}, errors.New("insert failed")
 		},

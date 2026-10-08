@@ -48,6 +48,7 @@ const (
 	cgGrouplessSvc   = "e3000000-0000-4000-8000-000000000022"
 	cgDefaultService = "e3000000-0000-4000-8000-000000000023"
 	cgInactiveSvc    = "e3000000-0000-4000-8000-000000000024"
+	cgUnknownService = "e3000000-0000-4000-8000-0000000000fe" // never seeded
 )
 
 // cgMirror records the incident the dual-write path sends to ServiceNow.
@@ -196,6 +197,33 @@ func TestIncidentCreateGroupIntegration_Postgres(t *testing.T) {
 		})
 	}
 
+	// A well-formed serviceId no service has: the coded 400 before any write,
+	// with or without a group (an allowed one included) -- not the default
+	// team, and not the insert's foreign-key message.
+	for name, extra := range map[string]string{
+		"no group sent":      "",
+		"allowed group sent": `,"assignmentGroupId":"` + cgGroup + `"`,
+		"refused group sent": `,"assignmentGroupId":"` + cgInactiveGroup + `"`,
+	} {
+		t.Run("unknown service: "+name, func(t *testing.T) {
+			before := countTestIncidents(t, pool)
+			rec := postIncident(t, svc, extra, cgUnknownService)
+			want := `{"code":400,"message":"serviceId does not exist","errorCode":"incident_service_not_found"}`
+			if rec.Code != http.StatusBadRequest || strings.TrimSpace(rec.Body.String()) != want {
+				t.Fatalf("status = %d body = %s, want 400 %s", rec.Code, rec.Body.String(), want)
+			}
+			if after := countTestIncidents(t, pool); after != before {
+				t.Errorf("an incident was created (%d -> %d)", before, after)
+			}
+		})
+	}
+	t.Run("missing service", func(t *testing.T) {
+		rec := postIncident(t, svc, "", "")
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "serviceId is required") || strings.Contains(rec.Body.String(), "errorCode") {
+			t.Errorf("status = %d body = %s, want 400 serviceId is required with no errorCode", rec.Code, rec.Body.String())
+		}
+	})
+
 	got, err := svc.GetIncidentCreateDefaults(repository.WithSystemIdentity(context.Background()))
 	if err != nil || got.DefaultGroup == nil || got.DefaultGroup.ID != cgDefaultGroup || got.DefaultGroup.Name != "CG Default Team" {
 		t.Errorf("create defaults = %+v err %v", got, err)
@@ -222,5 +250,17 @@ func TestIncidentCreateGroupIntegration_DualWrite(t *testing.T) {
 	}
 	if len(mirror.calls) != 1 {
 		t.Errorf("ServiceNow was called %d times, want 1 (the refused create never reaches it)", len(mirror.calls))
+	}
+
+	// An unknown service is refused on Postgres before ServiceNow is called:
+	// no orphan incident in ServiceNow, and the coded 400.
+	for name, extra := range map[string]string{"no group sent": "", "allowed group sent": `,"assignmentGroupId":"` + cgGroup + `"`} {
+		rec := postIncident(t, svc, extra, cgUnknownService)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"errorCode":"incident_service_not_found"`) {
+			t.Errorf("unknown service, %s: status = %d body = %s, want the coded 400", name, rec.Code, rec.Body.String())
+		}
+	}
+	if len(mirror.calls) != 1 {
+		t.Errorf("ServiceNow was called %d times, want 1 (an unknown service never reaches it)", len(mirror.calls))
 	}
 }

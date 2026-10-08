@@ -56,6 +56,14 @@ func snServicesStub(services []snServiceFixture) http.HandlerFunc {
 	}
 }
 
+// requestService is ServiceNow's service list holding only
+// validCreateIncidentRequest's service, with no support group: the create goes
+// on, unassigned when no default service is set (an unknown service is refused
+// before ServiceNow's create).
+func requestService() []snServiceFixture {
+	return []snServiceFixture{{sysid: uuidToSysid(testCaseUUID)}}
+}
+
 // snServiceFixture is one ServiceNow service: its sys_id, its support group's
 // sys_id ("" for none) and, optionally, names.
 type snServiceFixture struct{ sysid, group, name, groupName string }
@@ -118,15 +126,15 @@ func TestSNCreateIncident_GroupFromTheServiceOnALaterPage(t *testing.T) {
 	}
 }
 
-// A service with no support group, or one ServiceNow does not list, goes to
-// the default service's support group.
+// A service with no support group goes to the default service's support
+// group. (One ServiceNow does not list is refused: see
+// TestSNCreateIncident_UnknownServiceIsRefused.)
 func TestSNCreateIncident_NoGroupGoesToTheDefaultTeam(t *testing.T) {
 	req := validCreateIncidentRequest()
 	defaultSysid := uuidToSysid(testDefaultService)
 	const defaultGroup = "abcdefabcdefabcdefabcdefabcdefab"
 	for name, own := range map[string][]snServiceFixture{
 		"service has no support group": {{sysid: uuidToSysid(req.ServiceID), name: "Billing"}},
-		"service not listed":           nil,
 	} {
 		t.Run(name, func(t *testing.T) {
 			logs := captureSlog(t)
@@ -155,7 +163,6 @@ func TestSNCreateIncident_NoDefaultTeamLeavesItUnassigned(t *testing.T) {
 	req := validCreateIncidentRequest()
 	for name, services := range map[string][]snServiceFixture{
 		"service has no support group": {{sysid: uuidToSysid(req.ServiceID)}},
-		"service not listed":           {{sysid: "0123456789abcdef0123456789abcdef", group: "fedcba9876543210fedcba9876543210"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			logs := captureSlog(t)
@@ -171,6 +178,50 @@ func TestSNCreateIncident_NoDefaultTeamLeavesItUnassigned(t *testing.T) {
 				t.Errorf("want an error log, got: %s", logs.String())
 			}
 		})
+	}
+}
+
+// A service a complete scan of ServiceNow's services does not list, with no
+// group sent, is the coded 400 and nothing is created -- not the default team.
+// (An incomplete scan stays an error: TestSNCreateIncident_ExhaustedScanIsAnError.)
+func TestSNCreateIncident_UnknownServiceIsRefused(t *testing.T) {
+	req := validCreateIncidentRequest()
+	const defaultGroup = "abcdefabcdefabcdefabcdefabcdefab"
+	services := append(filler(maxLimit+2), snServiceFixture{sysid: uuidToSysid(testDefaultService), group: defaultGroup})
+	var body map[string]any
+	var lookups int32
+	_, err := snService(t, services, testDefaultService, &body, &lookups).CreateIncident(contextWithUserIDToken("token"), req)
+	var ve *apierror.ValidationError
+	if !errors.As(err, &ve) || ve.Msg != errServiceNotFound || ve.Code != apierror.CodeIncidentServiceNotFound {
+		t.Fatalf("err = %v, want the %s 400", err, apierror.CodeIncidentServiceNotFound)
+	}
+	if body != nil {
+		t.Errorf("an incident was created: %v", body)
+	}
+	if lookups != 2 {
+		t.Errorf("lookups = %d, want 2 (the whole list, once)", lookups)
+	}
+}
+
+// With a group sent, DATA_SOURCE=servicenow does not check that the service
+// exists (that would be a second scan of the services on every such create):
+// only the group scan runs, stopping at the first service the group supports,
+// and the create goes on to ServiceNow.
+func TestSNCreateIncident_AGroupSentSkipsTheServiceCheck(t *testing.T) {
+	req := validCreateIncidentRequest() // its service is not listed
+	req.AssignmentGroupID = strPtrGroup(testOtherGroup)
+	services := append([]snServiceFixture{{sysid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", group: uuidToSysid(testOtherGroup)}}, filler(maxLimit+1)...)
+
+	var body map[string]any
+	var lookups int32
+	if _, err := snService(t, services, "", &body, &lookups).CreateIncident(contextWithUserIDToken("token"), req); err != nil {
+		t.Fatalf("CreateIncident: %v", err)
+	}
+	if body["assignmentGroupId"] != uuidToSysid(testOtherGroup) {
+		t.Errorf("assignmentGroupId = %v, want %s", body["assignmentGroupId"], uuidToSysid(testOtherGroup))
+	}
+	if lookups != 1 {
+		t.Errorf("lookups = %d, want 1 (the group scan's first page, no service scan)", lookups)
 	}
 }
 

@@ -2104,17 +2104,26 @@ func scanSNServices(ctx context.Context, client *integrationservice.Client, toke
 // services: the service list carries no group's active flag, so unlike
 // Postgres it cannot leave out an inactive group (ServiceNow itself refuses
 // an inactive group on the create, if it does).
+//
+// With a group sent, the service's existence is NOT checked here (serviceExists
+// is always reported true): it would be a second scan of ServiceNow's services
+// on every such create (there is no Postgres write after it to leave an orphan
+// behind; what ServiceNow does with an unknown service is its own create's
+// answer). Only the no-group path, which scans for the service anyway, refuses
+// an unknown service (CodeIncidentServiceNotFound), and only after a complete
+// scan: an incomplete one stays an error.
 func (s *snIncidentService) assignmentGroupLookups(token string) assignmentGroupLookups {
 	return assignmentGroupLookups{
 		supportGroupOf: func(ctx context.Context, serviceID string) (repository.ServiceSupportGroup, error) {
 			return snSupportGroupOfService(ctx, s.client, token, serviceID)
 		},
-		isSupportGroup: func(ctx context.Context, groupID string) (bool, error) {
+		checkSentGroup: func(ctx context.Context, _, groupID string) (bool, bool, error) {
 			want := uuidToSysid(groupID)
-			return scanSNServices(ctx, s.client, token, "checking whether group "+groupID+" supports a service",
+			ok, err := scanSNServices(ctx, s.client, token, "checking whether group "+groupID+" supports a service",
 				func(svc snITService) bool {
 					return svc.SupportGroup != nil && strings.EqualFold(svc.SupportGroup.ID, want)
 				})
+			return true, ok, err
 		},
 	}
 }

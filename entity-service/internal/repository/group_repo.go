@@ -127,7 +127,7 @@ func (r *groupRepo) SearchGroups(ctx context.Context, searchQuery string, limit,
 // *** A DIFFERENT TABLE FROM SearchGroups. *** SearchGroups lists the team
 // registry (team), whose ids are not "group" ids; an incident's assignment
 // group is a "group" row. So this reads "group", limited to the same set
-// IncidentRepository.IsSupportGroup checks a create against. Every row it
+// IncidentRepository.CheckServiceAndSupportGroup checks a create against. Every row it
 // returns is active (the set excludes is_active = FALSE); a group with no
 // name is listed under its id.
 func (r *groupRepo) SearchSupportGroups(ctx context.Context, searchQuery string, limit, offset int) ([]domain.Group, int, error) {

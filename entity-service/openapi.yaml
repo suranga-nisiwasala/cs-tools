@@ -8762,7 +8762,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/CreateIncidentResponse'
         "400":
-          description: Bad request.
+          description: >
+            Bad request; nothing is created (in dual-write mode ServiceNow is not
+            called). Two refusals carry an `errorCode`:
+            `incident_service_not_found` ("serviceId does not exist": a well-formed
+            serviceId that no service has; refused ahead of the group when both are
+            wrong. On DATA_SOURCE=servicenow it is checked only when no
+            assignmentGroupId is sent) and `incident_assignment_group_not_allowed`
+            (an assignmentGroupId that is not an active support group of any
+            service). A missing serviceId ("serviceId is required") or one that is
+            not a UUID is a 400 with no code.
           content:
             application/json:
               schema:
@@ -20418,7 +20427,9 @@ components:
             request's project, its own creator, a user who may not decide an internal
             stage, or a field a customer may not set), and, on POST /incidents,
             `incident_assignment_group_not_allowed` (400: an assignmentGroupId that is
-            not an active support group of any service; nothing created). The list grows, so this is
+            not an active support group of any service; nothing created) and
+            `incident_service_not_found` (400: a well-formed serviceId that no service
+            has; nothing created). The list grows, so this is
             deliberately not a closed enum: a value not listed here is a newer server's.
           example: change_request_on_hold
 

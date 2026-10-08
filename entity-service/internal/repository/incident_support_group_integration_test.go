@@ -100,8 +100,28 @@ VALUES ($1::uuid, now(), now(), 'test', 'test', 'support-group live test (with)'
 		{"group that supports no service", unused, false},
 		{"unknown group", "00000000-0000-0000-0000-000000000001", false},
 	} {
-		if got, err := repo.IsSupportGroup(ctx, c.groupID); err != nil || got != c.want {
-			t.Errorf("IsSupportGroup %s: got %v err %v, want %v", c.name, got, err, c.want)
+		_, got, err := repo.CheckServiceAndSupportGroup(ctx, withGroup, c.groupID)
+		if err != nil || got != c.want {
+			t.Errorf("CheckServiceAndSupportGroup %s: groupAllowed %v err %v, want %v", c.name, got, err, c.want)
+		}
+	}
+
+	// The same query reports whether the service exists, independently of the
+	// group; a serviceID of "" (not sent / not a UUID) matches no service.
+	for _, c := range []struct {
+		name, serviceID, groupID string
+		wantService, wantGroup   bool
+	}{
+		{"known service, allowed group", withGroup, group, true, true},
+		{"known service without a group, allowed group", without, group, true, true},
+		{"known service, refused group", withGroup, unused, true, false},
+		{"unknown service, allowed group", "00000000-0000-0000-0000-000000000001", group, false, true},
+		{"unknown service, refused group", "00000000-0000-0000-0000-000000000001", unused, false, false},
+		{"no service id, allowed group", "", group, false, true},
+	} {
+		gotService, gotGroup, err := repo.CheckServiceAndSupportGroup(ctx, c.serviceID, c.groupID)
+		if err != nil || gotService != c.wantService || gotGroup != c.wantGroup {
+			t.Errorf("CheckServiceAndSupportGroup %s: got (%v, %v) err %v, want (%v, %v)", c.name, gotService, gotGroup, err, c.wantService, c.wantGroup)
 		}
 	}
 

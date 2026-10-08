@@ -505,12 +505,13 @@ func (s *incidentService) assignmentGroupLookups() assignmentGroupLookups {
 			supportGroupOf: func(context.Context, string) (repository.ServiceSupportGroup, error) {
 				return repository.ServiceSupportGroup{}, nil
 			},
-			isSupportGroup: func(context.Context, string) (bool, error) { return false, nil },
+			checkSentGroup: func(context.Context, string, string) (bool, bool, error) { return false, false, nil },
 		}
 	}
 	return assignmentGroupLookups{
 		supportGroupOf: s.repo.SupportGroupOfService,
-		isSupportGroup: s.repo.IsSupportGroup,
+		// One query: whether the service exists and whether the group is allowed.
+		checkSentGroup: s.repo.CheckServiceAndSupportGroup,
 	}
 }
 

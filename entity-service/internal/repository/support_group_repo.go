@@ -19,7 +19,7 @@ package repository
 // supportGroupSetSQL is the set of groups an incident may be created in when
 // the caller names the group itself: every active "group" that is the support
 // group (service.support_group_id) of at least one service. POST /incidents'
-// check of an explicit assignmentGroupId (IsSupportGroup) and POST
+// check of an explicit assignmentGroupId (CheckServiceAndSupportGroup) and POST
 // /groups/search's supportGroupsOnly filter (SearchSupportGroups) both read
 // this one statement, so the picker can never offer a group the create would
 // refuse.

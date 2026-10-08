@@ -105,4 +105,12 @@ const (
 	// (POST /groups/search with supportGroupsOnly) shows the current ones. A
 	// value that is not a UUID is a plain 400 with no code.
 	CodeIncidentAssignmentGroupNotAllowed = "incident_assignment_group_not_allowed"
+
+	// CodeIncidentServiceNotFound is the 400 for POST /incidents with a
+	// well-formed serviceId that no service has: the service the create form
+	// offered may have been removed since it was listed. Nothing was created
+	// (in dual-write mode ServiceNow is never called); picking another service
+	// is the fix. A missing serviceId, or one that is not a UUID, is a plain 400
+	// with no code.
+	CodeIncidentServiceNotFound = "incident_service_not_found"
 )

@@ -70,10 +70,12 @@ type IncidentRepository interface {
 	// support group). CreateIncident uses it to derive an incident's
 	// assignment group from its service, or from the default service.
 	SupportGroupOfService(ctx context.Context, serviceID string) (ServiceSupportGroup, error)
-	// IsSupportGroup reports whether groupID is an active group that is the
-	// support group of at least one service (supportGroupSetSQL): the only
-	// groups CreateIncident accepts as an explicit assignmentGroupId.
-	IsSupportGroup(ctx context.Context, groupID string) (bool, error)
+	// CheckServiceAndSupportGroup answers, in one query, the two checks of a
+	// create that names its own group: whether a service has serviceID
+	// (always false for serviceID "") and whether groupID is an active group
+	// that is the support group of at least one service (supportGroupSetSQL):
+	// the only groups CreateIncident accepts as an explicit assignmentGroupId.
+	CheckServiceAndSupportGroup(ctx context.Context, serviceID, groupID string) (serviceExists, groupAllowed bool, err error)
 	// SearchIncidents returns a filtered, sorted, paginated slice of
 	// incidents together with the total count of matching rows before
 	// pagination. priorities/states are the already-mapped Postgres enum
@@ -276,15 +278,20 @@ func (r *incidentRepo) SupportGroupOfService(ctx context.Context, serviceID stri
 	}, nil
 }
 
-// IsSupportGroup implements IncidentRepository.
-func (r *incidentRepo) IsSupportGroup(ctx context.Context, groupID string) (bool, error) {
-	var ok bool
-	err := r.db.QueryRow(ctx,
-		`SELECT EXISTS (`+supportGroupSetSQL+` AND g.id = $1::uuid)`, groupID).Scan(&ok)
-	if err != nil {
-		return false, fmt.Errorf("check support group %s: %w", groupID, err)
+// CheckServiceAndSupportGroup implements IncidentRepository. A serviceID of ""
+// is sent as NULL, which matches no service, rather than cast to uuid.
+func (r *incidentRepo) CheckServiceAndSupportGroup(ctx context.Context, serviceID, groupID string) (serviceExists, groupAllowed bool, err error) {
+	var service *string
+	if serviceID != "" {
+		service = &serviceID
 	}
-	return ok, nil
+	err = r.db.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM service WHERE id = $1::uuid),
+		       EXISTS (`+supportGroupSetSQL+` AND g.id = $2::uuid)`, service, groupID).Scan(&serviceExists, &groupAllowed)
+	if err != nil {
+		return false, false, fmt.Errorf("check service %s and support group %s: %w", serviceID, groupID, err)
+	}
+	return serviceExists, groupAllowed, nil
 }
 
 // NewIncidentRepository constructs an IncidentRepository backed by the given connection pool.

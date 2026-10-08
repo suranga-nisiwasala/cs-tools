@@ -59,7 +59,7 @@ func newTestIncidentEnrichmentClient(t *testing.T, enrichment string, enrichment
 	mux := http.NewServeMux()
 	// The create path looks up the service's support group first (it sets the
 	// assignment group from it); nil fixtures answer with no group.
-	mux.HandleFunc("/services/search", snServicesStub(nil))
+	mux.HandleFunc("/services/search", snServicesStub(requestService()))
 	mux.HandleFunc("/incidents/"+testIncidentSysid, func(w http.ResponseWriter, r *http.Request) {
 		if enrichmentStatus != http.StatusOK {
 			w.WriteHeader(enrichmentStatus)

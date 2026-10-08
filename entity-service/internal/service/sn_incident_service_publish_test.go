@@ -37,7 +37,7 @@ import (
 func newTestCreateIncidentClient(t *testing.T, incidentSysid string) *integrationservice.Client {
 	t.Helper()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/services/search", snServicesStub(nil))
+	mux.HandleFunc("/services/search", snServicesStub(requestService()))
 	mux.HandleFunc("/incidents", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
